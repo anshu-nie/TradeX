@@ -221,14 +221,18 @@ const seedDatabase = async () => {
     await mongoose.connect(MONGO_URI);
     console.log('[Seed] Connected successfully.');
 
-    // Upsert stocks
+    
+    // Upsert stocks directly into MongoDB
     for (const stock of sampleStocks) {
-      await Stock.findOneAndUpdate(
-        { symbol: stock.symbol },
-        stock,
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
+        await Stock.collection.updateOne(
+            { symbol: stock.symbol },
+            { $set: stock },
+            { upsert: true }
+        );
     }
+
+console.log(`[Seed] Successfully seeded ${sampleStocks.length} stocks.`);
+
     console.log(`[Seed] Successfully seeded ${sampleStocks.length} stocks.`);
 
     // Check if demo user exists
