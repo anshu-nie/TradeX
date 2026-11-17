@@ -9,6 +9,8 @@ RUN npm ci
 
 # Copy source code and build production artifacts
 COPY . .
+ARG VITE_API_URL=/api/v1
+ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
 # Stage 2: Serve with lightweight Nginx web server

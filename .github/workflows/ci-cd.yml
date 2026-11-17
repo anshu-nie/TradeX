@@ -110,11 +110,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase Repository Name for GHCR
+        id: repo-name
+        run: |
+          echo "IMAGE_REPOSITORY=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Extract Metadata for Backend
         id: meta-backend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/backend
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -123,7 +128,7 @@ jobs:
         id: meta-frontend
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/frontend
           tags: |
             type=raw,value=latest
             type=sha,format=short
