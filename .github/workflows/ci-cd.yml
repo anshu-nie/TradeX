@@ -23,10 +23,10 @@ jobs:
     name: Test & Build (Frontend & Backend)
     runs-on: ubuntu-latest
     steps:
-      - name: Stage 1: Checkout Source Code
+      - name: "Stage 1: Checkout Source Code"
         uses: actions/checkout@v4
 
-      - name: Stage 2: Set up Node.js 20.x
+      - name: "Stage 2: Set up Node.js 20.x"
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -43,15 +43,15 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Stage 4A: Run Automated Backend Tests (Jest & In-Memory MongoDB)
+      - name: "Stage 4A: Run Automated Backend Tests (Jest & In-Memory MongoDB)"
         working-directory: ./backend
         run: npm test
 
-      - name: Stage 4B: Run Automated Frontend Tests (Vitest & RTL)
+      - name: "Stage 4B: Run Automated Frontend Tests (Vitest & RTL)"
         working-directory: ./frontend
         run: npm test
 
-      - name: Stage 5: Compile Production Frontend Artifacts
+      - name: "Stage 5: Compile Production Frontend Artifacts"
         working-directory: ./frontend
         run: npm run build
 
