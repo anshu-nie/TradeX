@@ -1,3 +1,4 @@
+
 name: TradeX CI/CD Pipeline
 
 on:
@@ -16,12 +17,14 @@ env:
   FRONTEND_IMAGE_NAME: ${{ github.repository }}/frontend
 
 jobs:
+
   # ==========================================
-  # STAGE 1 - 5: Lint, Test & Build Frontend/Backend
+  # STAGE 1-5: Test and Build
   # ==========================================
   test-and-build:
     name: Test & Build (Frontend & Backend)
     runs-on: ubuntu-latest
+
     steps:
       - name: "Stage 1: Checkout Source Code"
         uses: actions/checkout@v4
@@ -30,7 +33,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
@@ -43,25 +46,27 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: "Stage 4A: Run Automated Backend Tests (Jest & In-Memory MongoDB)"
+      - name: "Stage 4A: Run Backend Tests"
         working-directory: ./backend
         run: npm test
 
-      - name: "Stage 4B: Run Automated Frontend Tests (Vitest & RTL)"
+      - name: "Stage 4B: Run Frontend Tests"
         working-directory: ./frontend
         run: npm test
 
-      - name: "Stage 5: Compile Production Frontend Artifacts"
+      - name: "Stage 5: Build Frontend"
         working-directory: ./frontend
         run: npm run build
 
+
   # ==========================================
-  # STAGE 6: Docker Build & Compose Validation
+  # STAGE 6: Docker Validation
   # ==========================================
   docker-validation:
     name: Docker Build & Configuration Validation
     needs: test-and-build
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
@@ -88,95 +93,154 @@ jobs:
           push: false
           tags: tradex-frontend:test
 
+
   # ==========================================
-  # STAGE 7: Publish Container Images to GHCR (Main branch only)
+  # STAGE 7: Native Multi-Platform Image Builds
   # ==========================================
   publish-images:
-    name: Publish Images to GitHub Container Registry
+    name: Build Native Multi-Platform Images
     needs: docker-validation
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            suffix: amd64
+            platform: linux/amd64
+
+          - runner: ubuntu-24.04-arm
+            suffix: arm64
+            platform: linux/arm64
+
     permissions:
       contents: read
       packages: write
+
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Lowercase Repository Name for GHCR
+      - name: Lowercase Repository Name
         id: repo-name
         run: |
-          echo "IMAGE_REPOSITORY=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Extract Metadata for Backend
-        id: meta-backend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/backend
-          tags: |
-            type=raw,value=latest
-            type=sha,format=short
-
-      - name: Extract Metadata for Frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/frontend
-          tags: |
-            type=raw,value=latest
-            type=sha,format=short
+          echo "IMAGE_REPOSITORY=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Build and Push Backend Image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
+          tags: |
+            ghcr.io/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/backend:latest-${{ matrix.suffix }}
+            ghcr.io/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/backend:sha-${{ github.sha }}-${{ matrix.suffix }}
 
       - name: Build and Push Frontend Image
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
+          tags: |
+            ghcr.io/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/frontend:latest-${{ matrix.suffix }}
+            ghcr.io/${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}/frontend:sha-${{ github.sha }}-${{ matrix.suffix }}
+
 
   # ==========================================
-  # STAGE 8: Automated Cloud Deployment (Optional on configured SSH credentials)
+  # STAGE 7B: Create Multi-Platform Manifests
+  # ==========================================
+  create-manifests:
+    name: Create Multi-Platform Manifests
+    needs: publish-images
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Lowercase Repository Name
+        id: repo-name
+        run: |
+          echo "IMAGE_REPOSITORY=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Create Multi-Platform Manifests
+        env:
+          IMAGE_REPOSITORY: ${{ steps.repo-name.outputs.IMAGE_REPOSITORY }}
+          IMAGE_SHA: ${{ github.sha }}
+        run: |
+          REPO="ghcr.io/${IMAGE_REPOSITORY}"
+
+          docker buildx imagetools create \
+            --tag "${REPO}/backend:latest" \
+            "${REPO}/backend:latest-amd64" \
+            "${REPO}/backend:latest-arm64"
+
+          docker buildx imagetools create \
+            --tag "${REPO}/frontend:latest" \
+            "${REPO}/frontend:latest-amd64" \
+            "${REPO}/frontend:latest-arm64"
+
+          docker buildx imagetools create \
+            --tag "${REPO}/backend:sha-${IMAGE_SHA}" \
+            "${REPO}/backend:sha-${IMAGE_SHA}-amd64" \
+            "${REPO}/backend:sha-${IMAGE_SHA}-arm64"
+
+          docker buildx imagetools create \
+            --tag "${REPO}/frontend:sha-${IMAGE_SHA}" \
+            "${REPO}/frontend:sha-${IMAGE_SHA}-amd64" \
+            "${REPO}/frontend:sha-${IMAGE_SHA}-arm64"
+
+
+  # ==========================================
+  # STAGE 8: Cloud Deployment
   # ==========================================
   deploy:
     name: Deploy to Cloud Server
-    needs: [docker-validation]
+    needs: create-manifests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+
     steps:
       - name: Check Deployment Credentials
         id: check-secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          if [ -n "${{ secrets.DEPLOY_HOST }}" ] && [ -n "${{ secrets.DEPLOY_USER }}" ] && [ -n "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
-            echo "configured=true" >> $GITHUB_OUTPUT
+          if [ -n "$DEPLOY_HOST" ] && [ -n "$DEPLOY_USER" ] && [ -n "$DEPLOY_SSH_KEY" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
             echo "SSH Deployment secrets configured."
           else
-            echo "configured=false" >> $GITHUB_OUTPUT
-            echo "SSH Deployment credentials not set. Skipping live remote deployment."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Deployment credentials not configured. Skipping deployment."
           fi
 
       - name: Execute Remote Deployment via SSH
@@ -190,6 +254,6 @@ jobs:
           script: |
             cd /opt/tradex || exit 1
             git pull origin main
-            docker compose pull || true
-            docker compose up -d --build
+            docker compose pull
+            docker compose up -d
             docker system prune -f
