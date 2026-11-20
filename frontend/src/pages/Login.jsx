@@ -55,7 +55,7 @@ const Login = () => {
           <div className="auth-logo-icon">
             <TrendingUp size={26} />
           </div>
-          <h1 className="auth-title">Welcome to TradeX</h1>
+          <h1 className="auth-title">Welcome To TradeX</h1>
           <p className="auth-subtitle">
             Sign in to your virtual investment portfolio
           </p>

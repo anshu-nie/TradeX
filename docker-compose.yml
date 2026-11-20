@@ -1,5 +1,6 @@
+
 services:
-  # MongoDB Database Service
+  # MongoDB Database
   mongodb:
     image: mongo:7.0
     container_name: tradex-mongodb
@@ -19,11 +20,10 @@ services:
       retries: 5
       start_period: 10s
 
-  # Express.js REST API Backend Service
+  # Backend - Pull from GitHub Container Registry
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/anshu-nie/tradex/backend:latest
+    pull_policy: always
     container_name: tradex-backend
     restart: unless-stopped
     ports:
@@ -49,11 +49,10 @@ services:
       retries: 3
       start_period: 10s
 
-  # React Production Frontend Service with Nginx
+  # Frontend - Pull from GitHub Container Registry
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/anshu-nie/tradex/frontend:latest
+    pull_policy: always
     container_name: tradex-frontend
     restart: unless-stopped
     ports:
